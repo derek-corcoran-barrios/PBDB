@@ -1,0 +1,38 @@
+---
+title: "Data collection and analysis of paleonetworks"
+author: "Derek Corcoran"
+date: "August 6, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, formatR)
+```
+
+## Data collection
+
+the first step was to collect data form the paleodiversity database, from there we gathered occurrences using the following code.
+
+```{r DataCollection, cache=TRUE, tidy = TRUE}
+All <- read_csv("https://paleobiodb.org/data1.2/occs/list.csv?datainfo&rowcount&interval=rhaetian,sinemurian&show=ecospace,coords,refattr,abund,attr,crmod,geo,ent,entbane,ident,lith,loc,paleoloc,phylo,prot,ref,rem,strat,stratext,time&lngmin=-28.85&lngmax=41.07822&latmin=34.00682&latmax=85", skip = 22)
+```
+
+Which collected all occurrences from the Rhaetian to the Sinemurian, within the bounding box of latitudes 34 to 85 degrees north and longitudes 28.85 west to 41.0.78 east. the variables collected were `r colnames(All)`. We collected `r nrow(All)`
+
+```{r table, tidy = TRUE, echo = FALSE, results='asis'}
+knitr::kable(head(All, 20), caption = "Firts 20", format = "latex")
+```
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
