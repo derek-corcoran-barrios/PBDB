@@ -8,7 +8,7 @@ output: pdf_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE)
 if (!require("pacman")) install.packages("pacman")
-pacman::p_load(tidyverse, formatR)
+pacman::p_load(tidyverse, formatR, kableExtra)
 ```
 
 ## Data collection
@@ -31,7 +31,7 @@ we filtered the data to include only occurences that occured in the `r cat(sort(
 Ocurrences were excluded if they were part of the Phyla Problematica, Ginkgophyta, Cycadeoideophyta, Cycadophyta, Equisetophyta, Pinophyta, Peltaspermophyta, Tracheophyta or if they belonged to the class Insecta or Mammalia, or belonging to the orders Pterosauria.
 
 ```{r fiteringData}
-All2 <- All %>% filter(environment %in% c("marine indet.", "open shallow subtidal", "deep subtidal ramp","reef, buildup or bioherm", "coarse channel fill", "delta plain", "estuary/bay", "carbonate indet.", "lagoonal/restricted shallow subtidal", "basinal (carbonate)","offshore ramp", "lagoonal", "shallow subtidal indet.", "sand shoal", "perireef or subreef", "offshore shelf", "offshore","tar", "basinal (siliciclastic)", "coastal indet.", "deep subtidal shelf", "foreshore", "marginal marine indet.", "deep subtidal indet.", "offshore indet.","paralic indet.", "\"channel\"", "basinal (siliceous)", "transition zone/lower shoreface", "fine channel fill", "deltaic indet.", "shoreface", "peritidal", "slope", "basin reef", "prodelta", "submarine fan")) %>% select(occurrence_no, collection_no, early_interval, late_interval, max_ma, min_ma, taxon_environment, motility, life_habit, diet, lng, lat, environment, lithology1, lithology2, cc, state, county, paleolng, paleolat, geoplate, phylum, class, order, family, genus, species_name, primary_reference, formation, stratgroup, member, stratscale, zone, localsection,localbed) %>% filter(phylum != "Problematica" & phylum != "Ginkgophyta"& phylum != "Cycadeoideophyta" & phylum != "Cycadophyta" & phylum != "Equisetophyta" & phylum != "Pinophyta" & phylum != "Peltaspermophyta"& phylum != "Tracheophyta"& phylum != "Pteridophyta")  %>% filter(order !=  "Pterosauria" & class != "Mammalia" & class != "Insecta" | phylum == "Cyanobacteria")
+All2 <- All %>% filter(environment %in% c("marine indet.", "open shallow subtidal", "deep subtidal ramp","reef, buildup or bioherm", "coarse channel fill", "delta plain", "estuary/bay", "carbonate indet.", "lagoonal/restricted shallow subtidal", "basinal (carbonate)","offshore ramp", "lagoonal", "shallow subtidal indet.", "sand shoal", "perireef or subreef", "offshore shelf", "offshore","tar", "basinal (siliciclastic)", "coastal indet.", "deep subtidal shelf", "foreshore", "marginal marine indet.", "deep subtidal indet.", "offshore indet.","paralic indet.", "\"channel\"", "basinal (siliceous)", "transition zone/lower shoreface", "fine channel fill", "deltaic indet.", "shoreface", "peritidal", "slope", "basin reef", "prodelta", "submarine fan")) %>% select(occurrence_no, collection_no, early_interval, late_interval, max_ma, min_ma, taxon_environment, motility, life_habit, diet, lng, lat, environment, lithology1, lithology2, cc, state, county, paleolng, paleolat, geoplate, phylum, class, order, family, genus, species_name, primary_reference, formation, stratgroup, member, stratscale, zone, localsection,localbed) %>% filter(phylum != "Problematica" & phylum != "Ginkgophyta"& phylum != "Cycadeoideophyta" & phylum != "Cycadophyta" & phylum != "Equisetophyta" & phylum != "Pinophyta" & phylum != "Peltaspermophyta"& phylum != "Tracheophyta"& phylum != "Pteridophyta")  %>% filter(order !=  "Pterosauria" & class != "Mammalia" & class != "Insecta" | phylum == "Cyanobacteria") %>% filter(!is.na(genus)) %>% mutate(Binomial = paste(genus, species_name))
 ```
 
 ## Data exploration
@@ -39,8 +39,68 @@ All2 <- All %>% filter(environment %in% c("marine indet.", "open shallow subtida
 
 ```{r table, tidy = TRUE, echo = FALSE, results='asis'}
 Phylla <- All2 %>% group_by(phylum) %>%  summarise(n = n()) %>% arrange(desc(n))
-knitr::kable(Phylla, caption = "Number of occurrences for each Phylum present in descending order", format = "latex", row.names = FALSE, format.args = list(big.mark = ","))
+Species <- All2 %>% group_by(Binomial) %>%  summarise(n = n()) %>% arrange(desc(n))
+knitr::kable(Phylla, caption = "Number of occurrences for each Phylum present in descending order", format = "latex", row.names = FALSE, format.args = list(big.mark = ","), booktabs = T)
 ```
 
-The final dataset had `r prettyNum(nrow(All2), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(All2$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(All2$species_name)), big.mark = ",")` species
+The final dataset had `r prettyNum(nrow(All2), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(All2$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(All2$Binomial)), big.mark = ",")` species.
+
+## Subsetting dataset by Age
+
+```{r}
+#PBDB
+ages <- data.frame(Age = c("Rhaetian", "Hettangian", "Sinemurian"), Max_lim = c(208.5,201.3,199.3), Min_lim = c(201.3,199.3,190.8)) %>% mutate(duration = Max_lim - Min_lim)
+
+
+#Ruhl et al 2016 and stratigrafic chart
+
+#ages <- data.frame(Age = c("Rhaetian", "Hettangian", "Sinemurian"), Max_lim = c(208.5,201.42,199.43), Min_lim = c(201.42,199.43,192.5)) %>% mutate(duration = Max_lim - Min_lim)
+
+#Ruhl et al 2016
+
+```
+
+### Rahetian
+
+```{r}
+Rahetian <- All2 %>% filter(min_ma >= ages$Min_lim[1] & max_ma <= ages$Max_lim[1]| 
+                             min_ma >= ages$Min_lim[1] & max_ma > ages$Max_lim[1] & min_ma < ages$Max_lim[1]|
+                              min_ma < ages$Min_lim[1] & max_ma <= ages$Max_lim[1] & max_ma > ages$Min_lim[1]|
+                              min_ma < ages$Min_lim[1] & max_ma > ages$Max_lim[1])
+```
+
+The Rahetian dataset had `r prettyNum(nrow(Rahetian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Rahetian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Rahetian$Binomial)), big.mark = ",")` species.
+
+### Hettangian
+
+In order to subsett by age we have to take into account an occurrence to be present in an age if any of its
+
+```{r}
+Hettangian <-All2 %>% filter(min_ma >= ages$Min_lim[2] & max_ma <= ages$Max_lim[2]| 
+                             min_ma >= ages$Min_lim[2] & max_ma > ages$Max_lim[2] & min_ma < ages$Max_lim[2]|
+                              min_ma < ages$Min_lim[2] & max_ma <= ages$Max_lim[2] & max_ma > ages$Min_lim[2]|
+                              min_ma < ages$Min_lim[2] & max_ma > ages$Max_lim[2])
+```
+
+The Hettangian dataset had `r prettyNum(nrow(Hettangian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Hettangian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Hettangian$Binomial)), big.mark = ",")` species.
+
+### Sinemurian
+
+```{r}
+Sinemurian <-All2 %>% filter(min_ma >= ages$Min_lim[3] & max_ma <= ages$Max_lim[3]| 
+                             min_ma >= ages$Min_lim[3] & max_ma > ages$Max_lim[3] & min_ma < ages$Max_lim[3]|
+                              min_ma < ages$Min_lim[3] & max_ma <= ages$Max_lim[3] & max_ma > ages$Min_lim[3]|
+                              min_ma < ages$Min_lim[3] & max_ma > ages$Max_lim[3])
+```
+
+The Sinemurian dataset had `r prettyNum(nrow(Sinemurian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Sinemurian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Sinemurian$Binomial)), big.mark = ",")` species.
+
+## Appendix
+
+### Species by order of number of occurrences
+
+```{r speciesTable, tidy = TRUE, echo = FALSE, results='asis', cache=FALSE}
+knitr::kable(head(Species, 20), caption = "Number of occurrences for the 20 most abundant Species present in descending order", format = "latex", row.names = FALSE, format.args = list(big.mark = ","), booktabs = T) %>%
+kable_styling(latex_options =c("repeat_header"), font_size = 7)
+```
 
