@@ -1,0 +1,275 @@
+---
+title: "Data collection and analysis of paleonetworks"
+author: "Derek Corcoran"
+date: "August 6, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, cache = TRUE)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, formatR, kableExtra, network, sna, sf, rgdal)
+#library(NetworkExtinction)
+```
+
+## Data collection
+
+the first step was to collect data form the paleodiversity database, from there we gathered occurrences using the following code. Which collected all occurrences from the Rhaetian to the Sinemurian, within the bounding box of latitudes 34 to 85 degrees north and longitudes 28.85 west to 41.078 east.
+
+```{r DataCollection, cache=TRUE, tidy = TRUE, echo = TRUE}
+All <- read_csv("https://paleobiodb.org/data1.2/occs/list.csv?datainfo&rowcount&interval=rhaetian,sinemurian&show=ecospace,coords,refattr,abund,attr,crmod,geo,ent,entbane,ident,lith,loc,paleoloc,phylo,prot,ref,rem,strat,stratext,time&lngmin=-37.68&lngmax=71.67&latmin=11.91&latmax=60", skip = 22) %>% mutate(Binomial = paste(genus, species_name))
+
+ 
+```
+
+## Data cleaning
+
+### Environment
+
+we filtered the data to include only occurences that occured in the `r cat(sort(c("marine indet.", "open shallow subtidal", "deep subtidal ramp","reef, buildup or bioherm", "coarse channel fill", "delta plain", "estuary/bay", "carbonate indet.", "lagoonal/restricted shallow subtidal", "basinal (carbonate)","offshore ramp", "lagoonal", "shallow subtidal indet.", "sand shoal", "perireef or subreef", "offshore shelf", "offshore","tar", "basinal (siliciclastic)", "coastal indet.", "deep subtidal shelf", "foreshore", "marginal marine indet.", "deep subtidal indet.", "offshore indet.","paralic indet.", "\"channel\"", "basinal (siliceous)", "transition zone/lower shoreface", "fine channel fill", "deltaic indet.", "shoreface", "peritidal", "slope", "basin reef", "prodelta", "submarine fan")), sep  = ", ")` environments
+
+### Taxonomy
+
+
+Ocurrences were excluded if they were part of the Phyla Problematica, Ginkgophyta, Cycadeoideophyta, Cycadophyta, Equisetophyta, Pinophyta, Peltaspermophyta, Tracheophyta or if they belonged to the class Insecta or Mammalia, or belonging to the orders Pterosauria.
+
+```{r fiteringData}
+All2 <- All %>% filter(phylum %in% c("Annelida", "Arthropoda", "Brachiopoda", "Bryozoa", "Chlorophyta", "Chordata", "Cnidaria", "Cyanobacteria",
+                                     "Echinodermata", "Foraminifera", "Haptophyta", "Hemichordata", 
+                                     "Mollusca", "Nematoda", "Porifera", 
+                                     "Problematica", "Retaria", "Rhodophyta") | is.na(phylum)) %>% 
+  filter(phylum %in% c("Annelida", "Brachiopoda", "Bryozoa", "Chlorophyta", "Cnidaria", "Cyanobacteria", "Mollusca", "Nematoda", "Porifera", 
+                                     "Problematica", "Retaria", "Rhodophyta") | 
+           is.na(phylum) | 
+           (phylum == "Arthropoda" & class %in% c("Ostracoda", "Malacostraca", "Thylacocephala") | is.na(class)) | 
+           (phylum == "Chordata" & class %in% c("Reptilia", "Actinopteri", "Chondrichthyes", "Osteichthyes", "Conodonta", "Actinopterygii", 
+                                            "Coelacanthimorpha", "Echinodermata", "Foraminifera", "Haptophyta", "Hemichordata", 
+                                            "Mollusca", "Nematoda", "Porifera", 
+                                            "Problematica", "Retaria", "Rhodophyta") | is.na(class))) %>%  filter(order != "Pterosauria" | is.na(order))
+        
+
+All3 <- All2 %>% filter(environment %in% c("marine indet.", "open shallow subtidal", "deep subtidal ramp","reef, buildup or bioherm", "coarse channel fill", "delta plain", "estuary/bay", "carbonate indet.", "lagoonal/restricted shallow subtidal", "basinal (carbonate)","offshore ramp", "lagoonal", "shallow subtidal indet.", "sand shoal", "perireef or subreef", "offshore shelf", "offshore","tar", "basinal (siliciclastic)", "coastal indet.", "deep subtidal shelf", "foreshore", "marginal marine indet.", "deep subtidal indet.", "offshore indet.","paralic indet.", "\"channel\"", "basinal (siliceous)", "transition zone/lower shoreface", "fine channel fill", "deltaic indet.", "shoreface", "peritidal", "slope", "basin reef", "prodelta", "submarine fan") | is.na(environment))
+```
+
+## Data exploration
+
+
+```{r table, tidy = TRUE, echo = FALSE, results='asis'}
+Phylla <- All3 %>% group_by(phylum) %>%  summarise(n = n()) %>% arrange(desc(n))
+Species <- All3 %>% group_by(Binomial) %>%  summarise(n = n()) %>% arrange(desc(n))
+knitr::kable(Phylla, caption = "Number of occurrences for each Phylum present in descending order", format = "latex", row.names = FALSE, format.args = list(big.mark = ","), booktabs = T)
+```
+
+The final dataset had `r prettyNum(nrow(All3), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(All3$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(All3$Binomial)), big.mark = ",")` species.
+
+## Functions
+
+```{r}
+RichnessWhile <- function(Data, quorum = 0.95){
+  Order <- sample(1:nrow(Data), nrow(Data))
+  Data <- Data[Order,]
+  Data$Richness <- NA
+  Data$Sample <- NA
+  Data$GoodsU <- NA
+  Richness <- 0
+  Sample <- 0
+  GoodsU <- 0
+  i <- 0
+  while(GoodsU < quorum){
+    i <- i + 1
+    Richness <- nrow(Data[1:i,] %>% group_by(Binomial) %>% summarise(NSpp = n()))
+    Data$Richness[i] <- Richness
+    Data$Sample[i] <- i
+    GoodsU <- 1 - (nrow(Data[1:i,] %>% group_by(Binomial) %>% summarise(N = n()) %>% filter(N == 1))/nrow(Data[1:i,]))
+    Data$GoodsU[i] <- 1 - (nrow(Data[1:i,] %>% group_by(Binomial) %>% summarise(N = n()) %>% filter(N == 1))/nrow(Data[1:i,]))
+    if(i %% 100 == 0){
+      message(paste("Sample", i, "of", nrow(Data)))
+      message(paste("Good's U is:", round(Data$GoodsU[i], 3)))
+    }
+  }
+  g2 <- ggplot(Data, aes(x = Sample, y = GoodsU)) + ylim(c(0,1))+ geom_line() + geom_hline(yintercept = quorum, lty = 2, color = "red") + theme_classic()
+  return(list(Graph = g2, Ensemble =  Data[1:i,], Data = data.frame(GoodsU = GoodsU, Sample = i, Richness = Richness)))
+}
+
+ResampleWhile <- function(DF, nsim = 10, Quorum){
+  Resample <- list()
+  Ensembles <- list()
+  for(i in 1:nsim){
+    Temp <- RichnessWhile(DF, quorum = Quorum)
+    Resample[[i]] <- Temp$Data
+    Resample[[i]]$Simulation <- i
+    Ensembles[[i]] <- Temp$Ensemble
+    Ensembles[[i]]$Simulation <- i
+    message(paste("Finished simulation", i, "of", nsim))
+    beepr::beep(2) 
+  }
+  Resample <- bind_rows(Resample)
+  Ensembles <- bind_rows(Ensembles)
+  richness <- median(Resample$Richness)
+  hist(Resample$Richness, main = paste("Resampled richness after", nsim, "simulations"), xlab = "Richness")
+  abline(v = richness, lty = 2, col = "red")
+  Resample <- Resample %>% mutate(Delta =abs(Richness - richness)) %>% arrange(Delta, desc(Sample))
+  Selected <- Ensembles %>% filter(Simulation == Resample$Simulation[1])
+  return(list(Resample = Resample, richness = richness, Selected = Selected))
+}
+
+
+```
+
+
+## Subsetting dataset by Age
+
+```{r}
+#PBDB
+ages <- data.frame(Age = c("Rhaetian", "Hettangian", "Sinemurian"), Max_lim = c(208.5,201.3,199.3), Min_lim = c(201.3,199.3,190.8)) %>% mutate(duration = Max_lim - Min_lim)
+
+
+```
+
+### Rahetian
+
+```{r}
+Rahetian <- All3 %>% filter(min_ma >= ages$Min_lim[1] & max_ma <= ages$Max_lim[1]| 
+                              min_ma >= ages$Min_lim[1] & max_ma > ages$Max_lim[1] & min_ma < ages$Max_lim[1]|
+                              min_ma < ages$Min_lim[1] & max_ma <= ages$Max_lim[1] & max_ma > ages$Min_lim[1]|
+                              min_ma < ages$Min_lim[1] & max_ma > ages$Max_lim[1])
+
+Poligono_Rhaetian <- read_table2("Poligono.Corrdenada.paleoThetys.Rhaetian.txt", 
+                                                        col_names = FALSE, col_types = cols(X3 = col_skip()))
+
+
+Poligono_Rhaetian <- st_sfc(st_polygon(x = list(as.matrix(Poligono_Rhaetian[-nrow(Poligono_Rhaetian),c(2,1)]))))
+Poligono_Rhaetian <- st_sf(data.frame(Epoca="Rhaetian", geom=Poligono_Rhaetian), crs = 4326)
+
+
+RahetianNA <- Rahetian[is.na(Rahetian$paleolat),]
+RahetianNOTNA <- Rahetian[!is.na(Rahetian$paleolat),]
+
+ModeloSinlat <- lm(paleolat ~ lat, data = RahetianNOTNA)
+RahetianNA$paleolat <- predict(ModeloSinlat, RahetianNA)
+
+ModeloSinlng <- lm(paleolng ~ lng, data = RahetianNOTNA)
+RahetianNA$paleolng <- predict(ModeloSinlng, RahetianNA)
+
+Rahetian <- bind_rows(RahetianNA,RahetianNOTNA)
+
+
+Rahetian_points_paleo <- st_as_sf(Rahetian[!is.na(Rahetian$paleolat),], coords = c("paleolng","paleolat"), crs = 4326)
+Rahetian_points_paleo2 <- st_intersection(Rahetian_points_paleo, st_buffer(Poligono_Rhaetian, 0))
+
+ggplot() + geom_sf(data = Poligono_Rhaetian, fill = "lightblue") + geom_sf(data = Rahetian_points_paleo2, color = "red", alpha = 0.5)
+
+Rahetian <- data.frame(Rahetian_points_paleo2)
+```
+
+```{r}
+set.seed(2018)
+ResampRahetian <- ResampleWhile(DF = Rahetian, nsim = 1000, Quorum = 0.73)
+saveRDS(ResampRahetian, "ResampRahetian.rds")
+```
+
+The Rahetian dataset had `r prettyNum(nrow(Rahetian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Rahetian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Rahetian$Binomial)), big.mark = ",")` species. The value for Good's U for the Rahetian is `r round(1 - (nrow( Rahetian%>% group_by(Binomial) %>% summarise(N = n()) %>% filter(N == 1))/nrow(Rahetian)),3)`
+
+When resmpling for a goods U of 0.73, the richness `r is ResampRahetian$richness`
+
+
+### Hettangian
+
+In order to subsett by age we have to take into account an occurrence to be present in an age if any of its
+
+```{r}
+Hettangian <-All3 %>% filter(min_ma >= ages$Min_lim[2] & max_ma <= ages$Max_lim[2]| 
+                               min_ma >= ages$Min_lim[2] & max_ma > ages$Max_lim[2] & min_ma < ages$Max_lim[2]|
+                               min_ma < ages$Min_lim[2] & max_ma <= ages$Max_lim[2] & max_ma > ages$Min_lim[2]|
+                               min_ma < ages$Min_lim[2] & max_ma > ages$Max_lim[2])
+
+Poligono_Hettangian <- read_table2("Poligono.Corrdenada.paleoThetys.Hettangian.txt", 
+                                                          col_names = FALSE, col_types = cols(X3 = col_skip()))
+
+Poligono_Hettangian <- st_sfc(st_polygon(x = list(as.matrix(Poligono_Hettangian[-nrow(Poligono_Hettangian),c(2,1)]))))
+Poligono_Hettangian <- st_sf(data.frame(Epoca="Hettangian", geom=Poligono_Hettangian), crs = 4326)
+
+
+HettangianNA <- Hettangian[is.na(Hettangian$paleolat),]
+HettangianNOTNA <- Hettangian[!is.na(Hettangian$paleolat),]
+
+ModeloSinlat <- lm(paleolat ~ lat, data = HettangianNOTNA)
+HettangianNA$paleolat <- predict(ModeloSinlat, HettangianNA)
+
+ModeloSinlng <- lm(paleolng ~ lng, data = HettangianNOTNA)
+HettangianNA$paleolng <- predict(ModeloSinlng, HettangianNA)
+
+Hettangian <- bind_rows(HettangianNA,HettangianNOTNA)
+
+
+Hettangian_points_paleo <- st_as_sf(Hettangian[!is.na(Hettangian$paleolat),], coords = c("paleolng","paleolat"), crs = 4326)
+Hettangian_points_paleo2 <- st_intersection(Hettangian_points_paleo, Poligono_Hettangian)
+
+
+
+ggplot() + geom_sf(data = Poligono_Hettangian, fill = "lightblue") + geom_sf(data = Hettangian_points_paleo2, color = "red", alpha = 0.5)
+
+Hettangian <- data.frame(Hettangian_points_paleo2)
+
+```
+
+
+
+```{r}
+set.seed(2018)
+ResampHettangian <- ResampleWhile(DF = Hettangian, nsim = 1000, Quorum = 0.73)
+saveRDS(ResampHettangian, "ResampHettangian.rds")
+```
+ 
+The Hettangian dataset had `r prettyNum(nrow(Hettangian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Hettangian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Hettangian$Binomial)), big.mark = ",")` species. The value for Good's U for the Rahetian is `r round(1 - (nrow( Hettangian%>% group_by(Binomial) %>% summarise(N = n()) %>% filter(N == 1))/nrow(Hettangian)),3)`
+
+When resmpling for a goods U of 0.73, the richness `r is ResampHettangian$richness`
+
+### Sinemurian
+
+```{r}
+Sinemurian <-All3 %>% filter(min_ma >= ages$Min_lim[3] & max_ma <= ages$Max_lim[3]| 
+                             min_ma >= ages$Min_lim[3] & max_ma > ages$Max_lim[3] & min_ma < ages$Max_lim[3]|
+                              min_ma < ages$Min_lim[3] & max_ma <= ages$Max_lim[3] & max_ma > ages$Min_lim[3]|
+                              min_ma < ages$Min_lim[3] & max_ma > ages$Max_lim[3])
+
+Poligono_Sinemuriano <- read_table2("Poligono.Corrdenada.paleoThetys.Sinemuriano.txt", 
+                                                           col_names = FALSE, col_types = cols(X3 = col_skip()))
+
+Poligono_Sinemuriano <- st_sfc(st_polygon(x = list(as.matrix(Poligono_Sinemuriano[-nrow(Poligono_Sinemuriano),c(2,1)]))))
+Poligono_Sinemuriano <- st_sf(data.frame(Epoca="Sinemuriano", geom=Poligono_Sinemuriano), crs = 4326)
+
+SinemurianNA <- Sinemurian[is.na(Sinemurian$paleolat),]
+SinemurianNOTNA <- Sinemurian[!is.na(Sinemurian$paleolat),]
+
+ModeloSinlat <- lm(paleolat ~ lat, data = SinemurianNOTNA)
+SinemurianNA$paleolat <- predict(ModeloSinlat, SinemurianNA)
+
+ModeloSinlng <- lm(paleolng ~ lng, data = SinemurianNOTNA)
+SinemurianNA$paleolng <- predict(ModeloSinlng, SinemurianNA)
+
+Sinemurian <- bind_rows(SinemurianNA,SinemurianNOTNA)
+
+
+Sinemurian_points_paleo <- st_as_sf(Sinemurian[!is.na(Sinemurian$paleolat),], coords = c("paleolng","paleolat"), crs = 4326)
+Sinemurian_points_paleo2 <- st_intersection(Sinemurian_points_paleo, Poligono_Sinemuriano)
+ggplot() + geom_sf(data = Poligono_Sinemuriano, fill = "lightblue") + geom_sf(data = Sinemurian_points_paleo2, color = "red", alpha = 0.5)
+
+Sinemurian <- data.frame(Sinemurian_points_paleo2)
+
+```
+
+
+```{r}
+set.seed(2018)
+ResampSinemurian <- ResampleWhile(DF = Sinemurian, nsim = 1000, Quorum = 0.73)
+saveRDS(ResampSinemurian, "ResampSinemurian.rds")
+```
+
+The Sinemurian dataset had `r prettyNum(nrow(Sinemurian), big.mark = ",")` occurrences, bellonging to `r prettyNum(length(unique(Sinemurian$phylum)), big.mark = ",")` Phylla (Table 1) and `r prettyNum(length(unique(Sinemurian$Binomial)), big.mark = ",")` species. The value for Good's U for the Rahetian is `r round(1 - (nrow( Sinemurian%>% group_by(Binomial) %>% summarise(N = n()) %>% filter(N == 1))/nrow(Sinemurian)),3)`
+
+When resmpling for a goods U of 0.73, the richness `r is ResampSinemurian$richness`
+
+
+## Appendix
+
